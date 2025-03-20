@@ -773,8 +773,8 @@ class Minio {
 
   /// Generate a presigned URL for GET
   ///
-  /// - [bucketName]: name of the bucket
-  /// - [objectName]: name of the object
+  /// - [bucket]: name of the bucket
+  /// - [object]: name of the object
   /// - [expires]: expiry in seconds (optional, default 7 days)
   /// - [respHeaders]: response headers to override (optional)
   /// - [requestDate]: A date object, the url will be issued at (optional)
@@ -791,6 +791,36 @@ class Minio {
     return presignedUrl(
       'GET',
       bucket,
+      object,
+      expires: expires,
+      reqParams: respHeaders,
+      requestDate: requestDate,
+    );
+  }
+
+  /// Generate a presigned URL for GET
+  ///
+  /// - [bucket]: name of the bucket
+  /// - [object]: name of the object
+  /// - [region]: name of the region
+  /// - [expires]: expiry in seconds (optional, default 7 days)
+  /// - [respHeaders]: response headers to override (optional)
+  /// - [requestDate]: A date object, the url will be issued at (optional)
+  String presignedGetObjectSync(
+    String bucket,
+    String region,
+    String object, {
+    int? expires,
+    Map<String, String>? respHeaders,
+    DateTime? requestDate,
+  }) {
+    MinioInvalidBucketNameError.check(bucket);
+    MinioInvalidObjectNameError.check(object);
+
+    return presignedUrlSync(
+      'GET',
+      bucket,
+      region,
       object,
       expires: expires,
       reqParams: respHeaders,
@@ -863,11 +893,76 @@ class Minio {
     return PostPolicyResult(postURL: urlStr, formData: postPolicy.formData);
   }
 
+  /// presignedPostPolicy can be used in situations where we want more control on the upload than what
+  /// presignedPutObject() provides. i.e Using presignedPostPolicy we will be able to put policy restrictions
+  /// on the object's `name` `bucket` `expiry` `Content-Type`
+  PostPolicyResult presignedPostPolicySync(
+      PostPolicy postPolicy, String region) {
+    if (client.anonymous) {
+      throw MinioAnonymousRequestError(
+        'Presigned POST policy cannot be generated for anonymous requests',
+      );
+    }
+
+    var date = DateTime.now().toUtc();
+    var dateStr = makeDateLong(date);
+
+    if (postPolicy.policy['expiration'] == null) {
+      // 'expiration' is mandatory field for S3.
+      // Set default expiration date of 7 days.
+      var expires = DateTime.now().toUtc();
+      expires.add(const Duration(days: 7));
+      postPolicy.setExpires(expires);
+    }
+
+    postPolicy.policy['conditions'].add(['eq', r'$x-amz-date', dateStr]);
+    postPolicy.formData['x-amz-date'] = dateStr;
+
+    postPolicy.policy['conditions']
+        .add(['eq', r'$x-amz-algorithm', 'AWS4-HMAC-SHA256']);
+    postPolicy.formData['x-amz-algorithm'] = 'AWS4-HMAC-SHA256';
+
+    postPolicy.policy['conditions'].add(
+      ['eq', r'$x-amz-credential', '$accessKey/${getScope(region, date)}'],
+    );
+
+    postPolicy.formData['x-amz-credential'] =
+        '$accessKey/${getScope(region, date)}';
+
+    if (sessionToken != null) {
+      postPolicy.policy['conditions']
+          .add(['eq', r'$x-amz-security-token', sessionToken]);
+    }
+
+    final policyBase64 = jsonBase64(postPolicy.policy);
+    postPolicy.formData['policy'] = policyBase64;
+
+    final signature =
+        postPresignSignatureV4(region, date, secretKey, policyBase64);
+
+    postPolicy.formData['x-amz-signature'] = signature;
+    final url = client
+        .getBaseRequest(
+          'POST',
+          postPolicy.formData['bucket'],
+          null,
+          region,
+          null,
+          null,
+          null,
+          null,
+        )
+        .url;
+    var portStr = (port == 80 || port == 443) ? '' : ':$port';
+    var urlStr = '${url.scheme}://${url.host}$portStr${url.path}';
+    return PostPolicyResult(postURL: urlStr, formData: postPolicy.formData);
+  }
+
   /// Generate a presigned URL for PUT.
   /// Using this URL, the browser can upload to S3 only with the specified object name.
   ///
-  /// - [bucketName]: name of the bucket
-  /// - [objectName]: name of the object
+  /// - [bucket]: name of the bucket
+  /// - [object]: name of the object
   /// - [expires]: expiry in seconds (optional, default 7 days)
   Future<String> presignedPutObject(
     String bucket,
@@ -879,12 +974,29 @@ class Minio {
     return presignedUrl('PUT', bucket, object, expires: expires);
   }
 
+  /// Generate a presigned URL for PUT.
+  /// Using this URL, the browser can upload to S3 only with the specified object name.
+  ///
+  /// - [bucket]: name of the bucket
+  /// - [object]: name of the object
+  /// - [expires]: expiry in seconds (optional, default 7 days)
+  String presignedPutObjectSync(
+    String bucket,
+    String region,
+    String object, {
+    int? expires,
+  }) {
+    MinioInvalidBucketNameError.check(bucket);
+    MinioInvalidObjectNameError.check(object);
+    return presignedUrlSync('PUT', bucket, region, object, expires: expires);
+  }
+
   /// Generate a generic presigned URL which can be
   /// used for HTTP methods GET, PUT, HEAD and DELETE
   ///
   /// - [method]: name of the HTTP method
-  /// - [bucketName]: name of the bucket
-  /// - [objectName]: name of the object
+  /// - [bucket]: name of the bucket
+  /// - [object]: name of the object
   /// - [expires]: expiry in seconds (optional, default 7 days)
   /// - [reqParams]: request parameters (optional)
   /// - [requestDate]: A date object, the url will be issued at (optional)
@@ -909,6 +1021,50 @@ class Minio {
     requestDate ??= DateTime.now().toUtc();
 
     final region = await getBucketRegion(bucket);
+    final request = client.getBaseRequest(
+      method,
+      bucket,
+      object,
+      region,
+      resource,
+      reqParams,
+      {},
+      null,
+    );
+    return presignSignatureV4(this, request, region, requestDate, expires);
+  }
+
+  /// Generate a generic presigned URL which can be
+  /// used for HTTP methods GET, PUT, HEAD and DELETE
+  ///
+  /// - [method]: name of the HTTP method
+  /// - [bucket]: name of the bucket
+  /// - [region]: name of the region
+  /// - [object]: name of the object
+  /// - [expires]: expiry in seconds (optional, default 7 days)
+  /// - [reqParams]: request parameters (optional)
+  /// - [requestDate]: A date object, the url will be issued at (optional)
+  String presignedUrlSync(
+    String method,
+    String bucket,
+    String region,
+    String object, {
+    int? expires,
+    String? resource,
+    Map<String, String>? reqParams,
+    DateTime? requestDate,
+  }) {
+    MinioInvalidBucketNameError.check(bucket);
+    MinioInvalidObjectNameError.check(object);
+
+    if (expires != null && expires < 0) {
+      throw MinioInvalidArgumentError('invalid expire time value: $expires');
+    }
+
+    expires ??= expires = 24 * 60 * 60 * 7; // 7 days in seconds
+    reqParams ??= {};
+    requestDate ??= DateTime.now().toUtc();
+
     final request = client.getBaseRequest(
       method,
       bucket,
