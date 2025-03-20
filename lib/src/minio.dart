@@ -801,8 +801,8 @@ class Minio {
   /// Generate a presigned URL for GET
   ///
   /// - [bucket]: name of the bucket
-  /// - [object]: name of the object
   /// - [region]: name of the region
+  /// - [object]: name of the object
   /// - [expires]: expiry in seconds (optional, default 7 days)
   /// - [respHeaders]: response headers to override (optional)
   /// - [requestDate]: A date object, the url will be issued at (optional)
@@ -978,6 +978,7 @@ class Minio {
   /// Using this URL, the browser can upload to S3 only with the specified object name.
   ///
   /// - [bucket]: name of the bucket
+  /// - [region]: name of the region
   /// - [object]: name of the object
   /// - [expires]: expiry in seconds (optional, default 7 days)
   String presignedPutObjectSync(
