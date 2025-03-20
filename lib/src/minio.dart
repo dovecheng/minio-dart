@@ -42,7 +42,7 @@ class Minio {
       );
     }
 
-    _client = MinioClient(this);
+    client = MinioClient(this);
   }
 
   /// default part size for multipart uploads.
@@ -85,7 +85,7 @@ class Minio {
   /// Set this value to enable tracing. (Optional)
   final bool enableTrace;
 
-  late MinioClient _client;
+  late final MinioClient client;
   final _regionMap = <String?, String>{};
 
   /// Checks if a bucket exists.
@@ -96,7 +96,7 @@ class Minio {
   Future<bool> bucketExists(String bucket) async {
     MinioInvalidBucketNameError.check(bucket);
     try {
-      final response = await _client.request(method: 'HEAD', bucket: bucket);
+      final response = await client.request(method: 'HEAD', bucket: bucket);
       validate(response);
       return response.statusCode == 200;
     } on MinioS3Error catch (e) {
@@ -149,7 +149,7 @@ class Minio {
     var queries = {'uploadId': uploadId};
     var payload = CompleteMultipartUpload(parts).toXml().toString();
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'POST',
       bucket: bucket,
       object: object,
@@ -200,7 +200,7 @@ class Minio {
       }
     }
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'PUT',
       bucket: bucket,
       object: object,
@@ -253,7 +253,7 @@ class Minio {
   Future<NotificationConfiguration> getBucketNotification(String bucket) async {
     MinioInvalidBucketNameError.check(bucket);
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'GET',
       bucket: bucket,
       resource: 'notification',
@@ -271,7 +271,7 @@ class Minio {
   Future<Map<String, dynamic>?> getBucketPolicy(bucket) async {
     MinioInvalidBucketNameError.check(bucket);
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'GET',
       bucket: bucket,
       resource: 'policy',
@@ -294,7 +294,7 @@ class Minio {
       return _regionMap[bucket]!;
     }
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'GET',
       bucket: bucket,
       region: 'us-east-1',
@@ -349,7 +349,7 @@ class Minio {
     final headers = range != null ? {'range': range} : null;
     final expectedStatus = range != null ? 206 : 200;
 
-    final resp = await _client.requestStream(
+    final resp = await client.requestStream(
       method: 'GET',
       bucket: bucket,
       object: object,
@@ -373,7 +373,7 @@ class Minio {
     MinioInvalidBucketNameError.check(bucket);
     MinioInvalidObjectNameError.check(object);
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'POST',
       bucket: bucket,
       object: object,
@@ -446,7 +446,7 @@ class Minio {
       queries['upload-id-marker'] = uploadIdMarker;
     }
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'GET',
       bucket: bucket,
       resource: 'uploads',
@@ -471,7 +471,7 @@ class Minio {
   }) {
     MinioInvalidBucketNameError.check(bucket);
 
-    final poller = NotificationPoller(_client, bucket, prefix, suffix, events);
+    final poller = NotificationPoller(client, bucket, prefix, suffix, events);
 
     poller.start();
 
@@ -480,7 +480,7 @@ class Minio {
 
   /// List of buckets created.
   Future<List<Bucket>> listBuckets() async {
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'GET',
       region: region ?? 'us-east-1',
     );
@@ -567,7 +567,7 @@ class Minio {
       queries['max-keys'] = maxKeys.toString();
     }
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'GET',
       bucket: bucket,
       queries: queries,
@@ -677,7 +677,7 @@ class Minio {
       queries['max-keys'] = maxKeys.toString();
     }
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'GET',
       bucket: bucket,
       queries: queries,
@@ -733,7 +733,7 @@ class Minio {
       queries['part-number-marker'] = marker.toString();
     }
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'GET',
       bucket: bucket,
       object: object,
@@ -760,7 +760,7 @@ class Minio {
         ? ''
         : CreateBucketConfiguration(region).toXml().toString();
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'PUT',
       bucket: bucket,
       region: region,
@@ -802,7 +802,7 @@ class Minio {
   /// presignedPutObject() provides. i.e Using presignedPostPolicy we will be able to put policy restrictions
   /// on the object's `name` `bucket` `expiry` `Content-Type`
   Future<PostPolicyResult> presignedPostPolicy(PostPolicy postPolicy) async {
-    if (_client.anonymous) {
+    if (client.anonymous) {
       throw MinioAnonymousRequestError(
         'Presigned POST policy cannot be generated for anonymous requests',
       );
@@ -846,7 +846,7 @@ class Minio {
         postPresignSignatureV4(region, date, secretKey, policyBase64);
 
     postPolicy.formData['x-amz-signature'] = signature;
-    final url = _client
+    final url = client
         .getBaseRequest(
           'POST',
           postPolicy.formData['bucket'],
@@ -909,7 +909,7 @@ class Minio {
     requestDate ??= DateTime.now().toUtc();
 
     final region = await getBucketRegion(bucket);
-    final request = _client.getBaseRequest(
+    final request = client.getBaseRequest(
       method,
       bucket,
       object,
@@ -949,7 +949,7 @@ class Minio {
 
     final uploader = MinioUploader(
       this,
-      _client,
+      client,
       bucket,
       object,
       partSize,
@@ -973,7 +973,7 @@ class Minio {
   Future<void> removeBucket(String bucket) async {
     MinioInvalidBucketNameError.check(bucket);
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'DELETE',
       bucket: bucket,
     );
@@ -990,7 +990,7 @@ class Minio {
     final uploadId = await findUploadId(bucket, object);
     if (uploadId == null) return;
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'DELETE',
       bucket: bucket,
       object: object,
@@ -1005,7 +1005,7 @@ class Minio {
     MinioInvalidBucketNameError.check(bucket);
     MinioInvalidObjectNameError.check(object);
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'DELETE',
       bucket: bucket,
       object: object,
@@ -1028,7 +1028,7 @@ class Minio {
 
       final headers = {'Content-MD5': md5Base64(payload)};
 
-      await _client.request(
+      await client.request(
         method: 'POST',
         bucket: bucket,
         resource: 'delete',
@@ -1045,7 +1045,7 @@ class Minio {
   ) async {
     MinioInvalidBucketNameError.check(bucket);
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'PUT',
       bucket: bucket,
       resource: 'notification',
@@ -1067,7 +1067,7 @@ class Minio {
     final method = policy != null ? 'PUT' : 'DELETE';
     final payload = policy != null ? json.encode(policy) : '';
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: method,
       bucket: bucket,
       resource: 'policy',
@@ -1081,7 +1081,7 @@ class Minio {
     MinioInvalidBucketNameError.check(bucket);
     MinioInvalidObjectNameError.check(object);
 
-    await _client.request(
+    await client.request(
       method: 'PUT',
       bucket: bucket,
       object: object,
@@ -1093,7 +1093,7 @@ class Minio {
     MinioInvalidBucketNameError.check(bucket);
     MinioInvalidObjectNameError.check(object);
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'GET',
       bucket: bucket,
       object: object,
@@ -1118,7 +1118,7 @@ class Minio {
     MinioInvalidBucketNameError.check(bucket);
     MinioInvalidObjectNameError.check(object);
 
-    final resp = await _client.request(
+    final resp = await client.request(
       method: 'HEAD',
       bucket: bucket,
       object: object,
